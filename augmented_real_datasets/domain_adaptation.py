@@ -313,15 +313,31 @@ class TimeSeriesAugmentor:
             mask = df["symbol"] == symbol
             close = df.loc[mask, "close"].values
 
-            # Detrend: use first differences
-            diff = np.diff(close, prepend=close[0])
-            detrended = np.cumsum(diff)
+            # Detrend: remove linear trend using log returns
+            n = len(close)
+            t = np.arange(n)
 
-            # Add new trend
-            n = len(detrended)
-            new_trend = trend_strength * np.arange(n)
+            # Fit linear trend to log prices
+            log_close = np.log(close)
+            trend_coeff = np.polyfit(t, log_close, 1)[0]
+            original_trend = trend_coeff * t
+
+            # Detrend: subtract trend
+            detrended = log_close - original_trend
+
+            # Add new trend (with same sign to maintain upward/downward bias)
+            new_trend = trend_strength * t
             retrended = detrended + new_trend
 
-            df.loc[mask, "close"] = retrended
+            # Convert back to prices, ensure positivity
+            prices = np.exp(retrended)
+
+            # Normalize to start at original first price
+            prices = prices * close[0] / prices[0]
+
+            # Ensure all prices are positive
+            prices = np.maximum(prices, close.min() * 0.1)
+
+            df.loc[mask, "close"] = prices
 
         return df
